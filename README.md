@@ -17,6 +17,8 @@
 
 ## About
 
+https://github.com/user-attachments/assets/35de4d4e-9895-41fe-b968-c5ee2121d055
+
 `spreadsheet-realign-clean-verify` is an industrial-grade, cross-agent **AI Agent Skill** designed to salvage corrupted, mid-sheet-shifted, merged, multi-encoding, or massive (`50k–1M+` rows) Excel and CSV workbooks. Before modifying or writing any deliverable, it conducts a brief **interactive pre-flight interview (Stage 0)**, orchestrates two dedicated subagents alongside memory-bounded deterministic Python pipelines, enforces universal strict `TRIM` on every output cell, isolates junk/fake rows into `_needs_review.csv`, cross-verifies **100% of phone numbers** back against raw sources, and concludes with a **concise numeric summary report (Stage 5)**.
 
 ---
