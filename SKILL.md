@@ -13,7 +13,7 @@ description: >-
   Excel errors, neutralizes CSV formula injection, exports styled XLSX + UTF-8 BOM CSV, cross-
   verifies 100% of phones back to raw sources, and outputs a concise numeric audit report.
 author: Eslam Elgindy
-version: 1.2.0
+version: 2.0.0
 license: MIT
 ---
 

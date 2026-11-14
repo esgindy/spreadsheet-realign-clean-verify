@@ -1,9 +1,9 @@
 # `spreadsheet-realign-clean-verify`
 
-**Cross-Platform AI Agent Skill for Messy & Large-Scale Spreadsheets (`.xlsx`, `.xlsm`, `.csv`, `.xls`, `.xlsb`) — `v1.2.0`**  
+**Cross-Platform AI Agent Skill for Messy & Large-Scale Spreadsheets (`.xlsx`, `.xlsm`, `.csv`, `.xls`, `.xlsb`) — `v2.0.0`**  
 **مهارة ذكاء اصطناعي شاملة لتنقيح وإعادة اصطفاف وتنظيف والتحقق الكامل لملفات الإكسل والبيانات الضخمة**
 
-[![Version: v1.2.0](https://img.shields.io/badge/Version-v1.2.0-success.svg)](#english-documentation)
+[![Version: v2.0.0](https://img.shields.io/badge/Version-v2.0.0-success.svg)](#english-documentation)
 [![Problems Solved: 21](https://img.shields.io/badge/Problems%20Solved-21-blue.svg)](#all-21-solved-problems--production-capabilities)
 [![Scale: 50k-1M+ Rows](https://img.shields.io/badge/Scale-50k--1M%2B%20Rows-purple.svg)](#architecture--workflow)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -65,7 +65,7 @@
 13. **Arabic Compare-Key Normalization & Typo Flagging:** Dedupes `أ/إ/آ` -> `ا`, `ى` -> `ي`, `ة` -> `ه` for duplicate matching without mutating original Arabic spelling, and flags email typos (`gamil.com`, `hotmil.com`).
 14. **Multi-Encoding Ingestion & Windows Excel BOM:** Auto-fallback across `utf-8-sig`, `utf-8`, `cp1256` (Windows Arabic), and `latin1`, exporting `.csv` in `utf-8-sig` BOM so Excel renders Arabic cleanly without mojibake.
 
-### Newly Added Enterprise Edge Cases in `v1.2.0` (`#15–#21`)
+### Newly Added Enterprise Edge Cases in `v2.0.0` (`#15–#21`)
 15. **Hidden Rows & Hidden Sheets Filtering:** Automatically skips manually hidden/filtered rows (`ws.row_dimensions[r].hidden`) and hidden internal tabs (`ws.sheet_state != "visible"`) by default (overridable via `--include-hidden-rows` / `--include-hidden-sheets`).
 16. **Hyperlink-Embedded Contacts & Cell Comments Rescue:** Extracts real WhatsApp/phone/email targets from Excel hyperlinks (`cell.hyperlink.target` for `wa.me/`, `tel:`, `mailto:`), `=HYPERLINK(...)` formulas, and team notes stored inside `cell.comment.text`, and indexes them for Stage 4 cross-verification.
 17. **Macintosh 1904 Date Epoch Detection (`1,462`-Day Shift):** Inspects `wb.epoch` (and legacy `.xls` `datemode`) automatically (`--epoch auto|1900|1904`) so Mac Excel serials (`1904-01-01` base) convert accurately without a 4-year offset error.
@@ -94,7 +94,7 @@ Built to follow the open [Agent Skills standard](https://agentskills.io/):
 
 ```text
 spreadsheet-realign-clean-verify/
-├── SKILL.md                          # Master 6-stage agent workflow (v1.2.0)
+├── SKILL.md                          # Master 6-stage agent workflow (v2.0.0)
 ├── AGENTS.md                         # Core non-negotiable engineering rules
 ├── README.md                         # Full bilingual documentation (EN + AR)
 ├── LICENSE                           # MIT License
@@ -190,7 +190,7 @@ Never commit client spreadsheets (`.xlsx`, `.xlsm`, `.xls`, `.xlsb`, `.csv`), ex
 13. **المطابقة الذكية لأسماء العربية وكشف أخطاء البريد الشائعة:** توحيد (`أ/إ/آ` -> `ا`، `ى` -> `ي`، `ة` -> `ه`) في مفتاح المقارنة لمنع التكرار مع الحفاظ على إملاء الاسم الأصلي، واكتشاف أخطاء نطاقات الإيميل مثل `gamil.com` و`hotmil.com`.
 14. **دعم كافة الترميزات ومنع تشويه العربية في إكسل:** قراءة تلقائية بالترتيب (`utf-8-sig` ثم `utf-8` ثم `cp1256` ثم `latin1`) مع تصدير ملفات `.csv` بترميز `UTF-8 with BOM` لتفتح الكلمات العربية سليمة تماماً في برنامج Excel.
 
-### المشاكل الاحترافية المضافة حديثاً في الإصدار `v1.2.0` (`#15–#21`)
+### المشاكل الاحترافية المضافة حديثاً في الإصدار `v2.0.0` (`#15–#21`)
 15. **استبعاد الصفوف المخفية والشيتات المخفية تلقائياً:** تجاهل الصفوف المخفية أو المستبعدة بالفلتر (`ws.row_dimensions[r].hidden`) والشيتات الداخلية المخفية (`sheet_state != "visible"`) افتراضياً حتى لا تعود بيانات محذوفة أو ملغاة إلى الملف النظيف (مع إمكانية تضمينها اختيارياً عبر `--include-hidden-rows`).
 16. **إنقاذ بيانات الاتصال المخفية داخل الروابط (`Hyperlinks`) والتعليقات (`Comments`):** استخراج أرقام الواتساب والهواتف والإيميلات المدفونة خلف نص مثل `"اضغط هنا"` أو معادلة `=HYPERLINK(...)` لروابط (`wa.me/`، `tel:`، `mailto:`)، بالإضافة لاستخراج ملاحظات الموظفين من تعليقات الخلايا (`cell.comment`) وإدراجها ضمن فهرس التحقق.
 17. **كشف نظام تاريخ ماك (Mac 1904 Date Epoch) ومنع إزاحة 1,462 يوماً:** فحص خصائص الملف تلقائياً (`wb.epoch` / `xlrd datemode`) لتمييز تاريخ الأساس `1904-01-01` عن `1899-12-30` ومنع تأخير جميع التواريخ بـ **4 سنوات ويوماً واحداً** عند التحويل.
@@ -219,7 +219,7 @@ Never commit client spreadsheets (`.xlsx`, `.xlsm`, `.xls`, `.xlsb`, `.csv`), ex
 
 ```text
 spreadsheet-realign-clean-verify/
-├── SKILL.md                          # الدليل الرئيسي ذو الـ 6 مراحل للذكاء الاصطناعي (الإصدار v1.2.0)
+├── SKILL.md                          # الدليل الرئيسي ذو الـ 6 مراحل للذكاء الاصطناعي (الإصدار v2.0.0)
 ├── AGENTS.md                         # القواعد الصارمة الملزمة لأي وكيل يعمل على الملفات
 ├── README.md                         # التوثيق الكامل ثنائي اللغة (إنجليزي + عربي بالكامل)
 ├── LICENSE                           # رخصة الاستخدام الحرة MIT
