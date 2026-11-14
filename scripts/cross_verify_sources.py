@@ -128,17 +128,22 @@ def verify_dataset(
         "format_defects": format_defects,
         "all_zero_defects_passed": total_defects == 0,
         "stage3_metrics": metrics,
+        "raw_source_stats": raw_idx.get("stats", []),
     }
 
 
 def format_stage5_summary(report: Dict[str, Any]) -> str:
     m = report.get("stage3_metrics", {})
+    raw_stats = report.get("raw_source_stats", [])
     defects = report.get("format_defects", {})
+    hidden_rows = sum(s.get("hidden_rows_skipped", 0) for s in raw_stats)
+    hidden_sheets = sum(s.get("hidden_sheets_skipped", 0) for s in raw_stats)
+    stacked_cnt = sum(1 for s in raw_stats if s.get("stacked_headers_flattened"))
     lines = [
         "## Stage 5 — Concise Numeric Summary Report",
         f"- **File Verified:** `{report['cleaned_file']}`",
-        f"- **Row Funnel:** Raw `{m.get('raw_records_input', '?')}` -> Recovered header rows `{m.get('header_as_data_recovered', 0)}` -> Merged `{m.get('merged_duplicates', 0)}` -> Quarantined `{m.get('quarantined_rows', 0)}` -> **Final `{report['total_output_rows']}` rows**",
-        f"- **Strict TRIM Applied:** `{m.get('cells_strict_trimmed', 0)}` cells (`{m.get('xlsx_mode', 'n/a')}`)",
+        f"- **Row Funnel:** Raw `{m.get('raw_records_input', '?')}` -> Recovered header rows `{m.get('header_as_data_recovered', 0)}` -> Merged `{m.get('merged_duplicates', 0)}` -> Quarantined `{m.get('quarantined_rows', 0)}` (fake placeholders: `{m.get('fake_placeholders_quarantined', 0)}`) -> **Final `{report['total_output_rows']}` rows**",
+        f"- **Strict TRIM & Rescues:** `{m.get('cells_strict_trimmed', 0)}` cells (`{m.get('xlsx_mode', 'n/a')}`), hyperlinks/comments applied `{m.get('hyperlinks_and_comments_applied', 0)}`, stacked headers flattened `{stacked_cnt}`, hidden skipped `{hidden_rows}r/{hidden_sheets}s`, 1904-epoch `{m.get('epoch_1904_records', 0)}`",
         f"- **Raw Phone Cross-Check:** `{report['phones_matched_raw']} / {report['phones_checked']}` (**{report['phone_match_rate']}%**)",
         f"- **Zero-Defect Gate:** `all_zero_defects_passed = {report['all_zero_defects_passed']}` (untrimmed={defects.get('untrimmed_or_double_space', 0)}, bidi={defects.get('invisible_or_bidi_chars', 0)}, excel_err={defects.get('excel_error_tokens', 0)}, bad_dates={defects.get('invalid_date_format', 0)}, unreachable={defects.get('unreachable_rows', 0)}, field_mismatch={defects.get('field_cross_mismatches', 0)})",
     ]

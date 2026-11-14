@@ -8,9 +8,11 @@ Solves:
 - Applies Agent 1 semantic JSON overrides (`agent1_semantic_decisions.json`) + deterministic rules
 - Arabic compare-key deduplication (أ/إ/آ -> ا, ى -> ي, ة -> ه) without altering cell spelling
 - Safe phone normalization (Arabic-Indic digits, country codes intact, tail matching, text '@')
-- Excel serial date & timestamp standardization -> YYYY-MM-DD (native Excel date)
+- Fake/placeholder contact filtering (`0000000`, `1234567`, `test@test.com`) -> `_needs_review.csv`
+- Excel serial date standardization (Windows 1900 & Mac 1904 epochs) -> YYYY-MM-DD
+- Mixed locale currency & budget normalization (`1.200,50 €`, `$1,200.50`, `2.5M`)
+- Rescues embedded hyperlink contacts & Excel cell comments into clean columns
 - Mandatory `strict_trim`, Excel error scrubbing, pipe dedup, CSV formula-injection guard
-- Reachability gate + `_needs_review.csv` quarantine export
 - Adaptive Excel export (`Workbook(write_only=True)` > 50,000 rows) + CSV UTF-8 BOM (`utf-8-sig`)
 """
 
@@ -34,6 +36,87 @@ EXCEL_ERR_RE = re.compile(r"^#(REF!|DIV/0!|VALUE!|NAME\?|N/A|NUM!|NULL!|ERROR!)$
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,24}")
 SCI_NUM_RE = re.compile(r"^(\d+(?:\.\d+)?)[eE][+\-]?\d+$")
 TRANS_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+FAKE_PLACEHOLDER_LOCAL = {"test", "fake", "dummy", "none", "noemail", "na", "null", "noreply", "aaa", "asdf"}
+CURRENCY_SYMBOLS = {
+    "$": "USD", "usd": "USD", "€": "EUR", "eur": "EUR", "£": "GBP", "gbp": "GBP",
+    "aed": "AED", "د.إ": "AED", "sar": "SAR", "ريال": "SAR", "egp": "EGP", "ج.م": "EGP",
+}
+
+
+def is_fake_placeholder_phone(raw: str) -> bool:
+    d = re.sub(r"\D", "", str(raw or "").translate(TRANS_DIGITS))
+    if len(d) < 7 or sum(c.isalpha() for c in str(raw or "")) > 3:
+        return False
+    if len(set(d)) == 1 or len(set(d[-7:])) == 1:
+        return True
+    if d in "0123456789012345" or d in "9876543210":
+        return True
+    return len(d) > 7 and d[-7:] in ("0000000", "1111111", "1234567", "7654321", "9999999")
+
+
+def is_fake_placeholder_email(raw: str) -> bool:
+    m = EMAIL_RE.search(str(raw or ""))
+    if not m:
+        return False
+    em = m.group(0).lower()
+    local, _, domain = em.partition("@")
+    dom_stem = domain.split(".")[0]
+    return local in FAKE_PLACEHOLDER_LOCAL and (local == dom_stem or domain in ("test.com", "noemail.com", "none.com"))
+
+
+def normalize_budget_value(raw: str) -> str:
+    """Normalize US/EU locale currency amounts & K/M shorthand while preserving range phrases."""
+    s = strict_trim(raw).translate(TRANS_DIGITS).replace("٬", ",").replace("٫", ".")
+    if not s:
+        return ""
+    # Preserve multi-number ranges like '1.5M - 2M' untouched except digit translation/TRIM
+    if re.search(r"\d\s*(?:-|to|إلى)\s*\d", s, re.I):
+        return s
+
+    detected_ccy = ""
+    work = s
+    for sym, code in sorted(CURRENCY_SYMBOLS.items(), key=lambda x: -len(x[0])):
+        if re.search(re.escape(sym), work, re.I):
+            detected_ccy = code
+            work = re.sub(re.escape(sym), " ", work, flags=re.I)
+
+    work = strict_trim(work)
+    m = re.fullmatch(r"([\d.,]+)\s*([km]|mn)?", work, re.I)
+    if not m:
+        return s
+
+    num_str, mult_str = m.group(1), (m.group(2) or "").lower()
+    if "," in num_str and "." in num_str:
+        # Whichever appears last is the decimal separator
+        if num_str.rfind(",") > num_str.rfind("."):
+            num_str = num_str.replace(".", "").replace(",", ".")
+        else:
+            num_str = num_str.replace(",", "")
+    elif "," in num_str:
+        if re.fullmatch(r"\d{1,3}(?:,\d{3})+", num_str):
+            num_str = num_str.replace(",", "")
+        elif re.fullmatch(r"\d+,\d{1,2}", num_str):
+            num_str = num_str.replace(",", ".")
+        else:
+            num_str = num_str.replace(",", "")
+    elif "." in num_str:
+        if re.fullmatch(r"\d{1,3}(?:\.\d{3}){2,}", num_str) or (
+            re.fullmatch(r"\d{1,3}\.\d{3}", num_str) and not mult_str and bool(detected_ccy)
+        ):
+            num_str = num_str.replace(".", "")
+
+    try:
+        val = float(num_str)
+    except ValueError:
+        return s
+
+    if mult_str == "k":
+        val *= 1_000
+    elif mult_str in ("m", "mn"):
+        val *= 1_000_000
+
+    formatted = str(int(round(val))) if abs(val - round(val)) < 1e-6 else f"{val:.2f}".rstrip("0").rstrip(".")
+    return f"{formatted} {detected_ccy}".strip()
 
 UNIT_RE = re.compile(
     r"(studio|ssstudio|استديو|ستوديو|\b\d+\s*[_\-]?\s*bed(room)?s?\b|\b\d+\s*br\b|"
@@ -164,14 +247,16 @@ def phone_tail(d: str) -> str:
     return d[-9:] if len(d) >= 9 else d
 
 
-def parse_date_iso(raw: str) -> str:
+def parse_date_iso(raw: str, epoch: int = 1900) -> str:
     s = strict_trim(raw).translate(TRANS_DIGITS)
     if not s:
         return ""
-    # Excel serial integer (1900 epoch) between ~2000 and ~2040
+    # Excel serial integer (supports both Windows 1900 and Mac 1904 epochs)
     if re.fullmatch(r"\d{5}(?:\.0+)?", s):
         serial = int(float(s))
-        if 36526 <= serial <= 55000:
+        if epoch == 1904 and 35064 <= serial <= 55000:
+            return (dt.date(1904, 1, 1) + dt.timedelta(days=serial)).strftime("%Y-%m-%d")
+        if epoch != 1904 and 36526 <= serial <= 55000:
             return (dt.date(1899, 12, 30) + dt.timedelta(days=serial)).strftime("%Y-%m-%d")
     # ISO datetime prefix
     m = re.match(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s].*)?$", s)
@@ -191,18 +276,58 @@ def parse_date_iso(raw: str) -> str:
     return ""
 
 
-def deterministic_realign_row(rec: Dict[str, Any], decision: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+def _scrub_fake_tokens_in_str(val: str) -> str:
+    if not val:
+        return ""
+    kept: List[str] = []
+    for part in str(val).split("|"):
+        tok = strict_trim(part)
+        if not tok:
+            continue
+        if is_fake_placeholder_email(tok) or (not EMAIL_RE.search(tok) and is_fake_placeholder_phone(tok)):
+            continue
+        kept.append(tok)
+    return " | ".join(kept)
+
+
+def deterministic_realign_row(
+    rec: Dict[str, Any],
+    decision: Optional[Dict[str, Any]] = None,
+    epoch_override: Optional[int] = None,
+) -> Dict[str, str]:
     """Combine Agent 1 overrides (if supplied) with deterministic multi-pattern realignment."""
     if decision and isinstance(decision.get("cleaned"), dict):
-        base = {k: dedup_pipe_tokens(v) for k, v in decision["cleaned"].items()}
+        base = {k: _scrub_fake_tokens_in_str(dedup_pipe_tokens(v)) for k, v in decision["cleaned"].items()}
         for k, _ in STANDARD_HEADERS:
             base.setdefault(k, "")
+        if base.get("budget"):
+            base["budget"] = normalize_budget_value(base["budget"])
         return {k: strict_trim(base[k]) for k, _ in STANDARD_HEADERS}
 
     fields = dict(rec.get("fields", {}))
     out: Dict[str, str] = {k: "" for k, _ in STANDARD_HEADERS}
-    notes_parts: List[str] = []
+    notes_parts: List[str] = [strict_trim(c) for c in rec.get("cell_comments", []) if strict_trim(c)]
     phones_found: List[str] = []
+
+    # Fold hyperlink-rescued contacts (e.g., wa.me, tel:, mailto:) cleanly before realignment
+    for slot, link_val in rec.get("hyperlinks_rescued", []):
+        if slot in ("whatsapp", "phone", "email") and link_val:
+            existing = strict_trim(fields.get(slot, ""))
+            if link_val not in existing:
+                fields[slot] = f"{existing} | {link_val}" if existing else link_val
+
+    # Scrub fake placeholder phones/emails (e.g. 00000000, 1234567, test@test.com)
+    for fk in list(fields.keys()):
+        fields[fk] = _scrub_fake_tokens_in_str(fields[fk])
+
+    # Pre-convert Mac 1904 serial dates to ISO strings before pattern routing
+    eff_epoch = epoch_override if epoch_override in (1900, 1904) else int(rec.get("date_epoch", 1900))
+    if eff_epoch == 1904:
+        for fk, fval in list(fields.items()):
+            if re.fullmatch(r"\d{5}(?:\.0+)?", strict_trim(fval)):
+                iso_1904 = parse_date_iso(fval, epoch=1904)
+                if iso_1904:
+                    fields[fk] = iso_1904
 
     raw_phone = strict_trim(fields.get("phone", ""))
     raw_wa = strict_trim(fields.get("whatsapp", ""))
@@ -333,7 +458,7 @@ def deterministic_realign_row(rec: Dict[str, Any], decision: Optional[Dict[str, 
             elif slot == "campaign" and AUDIENCE_TAG_RE.match(val):
                 continue
             else:
-                out[slot] = val
+                out[slot] = normalize_budget_value(val) if slot == "budget" else val
 
     raw_notes = dedup_pipe_tokens(fields.get("notes", ""))
     if raw_notes:
@@ -481,6 +606,7 @@ def main() -> int:
     parser.add_argument("--out-dir", "-o", default="./cleaned_output", help="Stage 0 destination folder.")
     parser.add_argument("--prefix", "-p", default="cleaned_dataset", help="Output filename prefix.")
     parser.add_argument("--dedup-mode", choices=("lead", "unit", "none"), default="lead", help="Deduplication granularity.")
+    parser.add_argument("--epoch", choices=("auto", "1900", "1904"), default="auto", help="Override Excel date serial epoch.")
     parser.add_argument("--no-quarantine", action="store_true", help="Disable _needs_review.csv quarantine export.")
     parser.add_argument("--write-only-rows", type=int, default=50_000, help="Excel write_only streaming row threshold.")
     parser.add_argument("--interactive", action="store_true", help="Run Stage 0 interactive terminal prompt.")
@@ -489,6 +615,7 @@ def main() -> int:
     prompt_stage0_if_interactive(args)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    epoch_override = int(args.epoch) if args.epoch in ("1900", "1904") else None
 
     base_records = json.loads(Path(args.base).read_text(encoding="utf-8"))
     decisions: Dict[str, Any] = {}
@@ -498,16 +625,21 @@ def main() -> int:
     cleaned_rows: List[Dict[str, str]] = []
     quarantine_rows: List[Dict[str, str]] = []
     dedup_index: Dict[str, int] = {}
-    stats = {
+    stats: Dict[str, Any] = {
         "raw_records_input": len(base_records),
         "header_as_data_recovered": sum(1 for r in base_records if r.get("header_as_data")),
         "rows_with_anomalies": sum(1 for r in base_records if r.get("flags")),
+        "epoch_1904_records": sum(1 for r in base_records if r.get("date_epoch") == 1904),
+        "hyperlinks_and_comments_applied": 0,
+        "fake_placeholders_quarantined": 0,
         "merged_duplicates": 0,
         "quarantined_rows": 0,
         "cells_strict_trimmed": 0,
     }
 
     for rec in base_records:
+        if rec.get("hyperlinks_rescued") or rec.get("cell_comments"):
+            stats["hyperlinks_and_comments_applied"] += len(rec.get("hyperlinks_rescued", [])) + len(rec.get("cell_comments", []))
         rid = str(rec.get("record_id", ""))
         dec = decisions.get(rid)
         if dec and dec.get("action") == "drop":
@@ -521,17 +653,26 @@ def main() -> int:
             })
             continue
 
-        row = deterministic_realign_row(rec, dec)
+        row = deterministic_realign_row(rec, dec, epoch_override=epoch_override)
         has_phone = bool(row["phone"])
         has_email = bool(EMAIL_RE.fullmatch(row["email"]))
         if not has_phone and not has_email:
             stats["quarantined_rows"] += 1
+            raw_cells = rec.get("raw_cells", [])
+            is_fake = any("FAKE_PLACEHOLDER" in f for f in rec.get("flags", [])) or any(
+                is_fake_placeholder_phone(c) or is_fake_placeholder_email(c) for c in raw_cells
+            )
+            if is_fake:
+                stats["fake_placeholders_quarantined"] += 1
+                reason = "fake_placeholder_contact"
+            else:
+                reason = "unreachable_no_phone_or_email"
             quarantine_rows.append({
                 "source_file": strict_trim(rec.get("source_file", "")),
                 "source_sheet": strict_trim(rec.get("source_sheet", "")),
                 "source_row": str(rec.get("source_row", "")),
-                "exclusion_reason": "unreachable_no_phone_or_email",
-                "raw_snapshot": strict_trim(" | ".join(rec.get("raw_cells", [])))[:300],
+                "exclusion_reason": reason,
+                "raw_snapshot": strict_trim(" | ".join(raw_cells))[:300],
             })
             continue
 

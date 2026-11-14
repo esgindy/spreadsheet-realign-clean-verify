@@ -4,7 +4,7 @@ Read [`SKILL.md`](./SKILL.md) before modifying, auditing, or cleaning any multi-
 
 ## Core Operating Rules for Any AI Coding Agent
 
-1. **Run the Pre-Flight Interview First (Stage 0):** Before generating cleaned files, confirm output format (`.xlsx`, `.csv` `utf-8-sig`, or Both), destination save folder (same folder vs. custom path — never overwrite raw originals), granularity/split mode, and whether to emit a `_needs_review.csv` quarantine log.
+1. **Run the Pre-Flight Interview First (Stage 0):** Before generating cleaned files, confirm output format (`.xlsx`, `.csv` `utf-8-sig`, or Both), destination save folder (same folder vs. custom path — never overwrite raw originals), granularity/split mode, hidden rows/sheets handling (skip by default vs. include), and whether to emit a `_needs_review.csv` quarantine log.
 2. **Never assume uniform column schemas within an Excel sheet.** Inspect rows dynamically for mid-sheet column shifts, multi-form stacked blocks, and data accidentally placed in header rows.
 3. **Use a Two-Stage Semantic Pass (Reader -> Realigner):**
    - First extract flagged anomalies + unique ambiguous cell values alongside original raw row snapshots (`scripts/profile_and_extract.py`).

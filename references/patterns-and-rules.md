@@ -1,6 +1,6 @@
 # Common Spreadsheet Corruption Patterns, Big-Data Scaling & Cleaning Rules
 
-This reference documents **all 14 real-world corruption, schema, encoding, and large-file bottlenecks** solved by `spreadsheet-realign-clean-verify`.
+This reference documents **all 21 real-world corruption, schema, encoding, and large-file bottlenecks** solved by `spreadsheet-realign-clean-verify`.
 
 ---
 
@@ -29,6 +29,13 @@ This reference documents **all 14 real-world corruption, schema, encoding, and l
 | 12 | **Email Typos & Formula Injection** | Domains like `gamil.com`, `icloude.com`, `gmail.co35518m`, OR CSV formula triggers (`=`, `+`, `-`, `@`). | Flag suspect email domains in an audit note rather than mutating silently; neutralize unsafe leading formula characters on CSV export while preserving valid phones/emails. |
 | 13 | **Arabic Key Normalization (Compare Only)** | `أبو ظبي` vs `ابوظبي`, `القاهرة` vs `القاهره`, `إمارات` vs `امارات` fail exact string matches. | Map `أ/إ/آ -> ا`, `ى -> ي`, `ة -> ه` on deduplication/grouping keys **only**; retain proper spelling in output cells. |
 | 14 | **Mojibake, BOM & Invisible Whitespace** | CSV opened in Excel scrambles Arabic without UTF-8 BOM; `\xa0`, `\t`, double spaces break joins. | Multi-encoding ingest fallback (`utf-8-sig` -> `utf-8` -> `cp1256` -> `latin1`), run `strict_trim` on **100% of output cells**, and export `.csv` with `utf-8-sig`. |
+| 15 | **Hidden Rows & Hidden Sheets** | Filtered-out, deleted, or hidden scratch tabs silently sneak back into cleaned files. | Skip `ws.sheet_state != "visible"` and `ws.row_dimensions[r].hidden` by default (`--include-hidden-rows` / `--include-hidden-sheets` overrides). |
+| 16 | **Hyperlink Contacts & Cell Comments** | Display text says `"Chat"` or `"Email"` while real `wa.me/`, `tel:`, `mailto:` link or agent notes sit in hyperlinks/comments. | Extract `cell.hyperlink.target`, `=HYPERLINK(...)` formulas, and `cell.comment.text`, fold into clean fields, and index in `raw_source_index.json`. |
+| 17 | **Macintosh 1904 Date Epoch** | Old Mac Excel / legacy exports shift every serial date backward by 1,462 days (4 years + 1 day). | Detect `wb.epoch` (and `xlrd datemode`) automatically (`--epoch auto|1900|1904`) and convert with the exact epoch base (`1904-01-01` vs `1899-12-30`). |
+| 18 | **Fake & Sequential Placeholders** | Lead forms contain `000000000`, `11111111`, `123456789`, `987654321`, or `test@test.com` bypassing regex checks. | Detect repetitive/sequential phones and dummy email pairs and route unreachable records to `_needs_review.csv` (`fake_placeholder_contact`). |
+| 19 | **Mixed Locale Currencies & K/M** | Workbooks mix `1.200,50 €`, `$1,200.50`, `١٬٥٠٠٬٠٠٠`, `2.5M AED`, and `750k`. | Normalize US/EU separators and Arabic digits cleanly (`1200.50 EUR`, `2500000 AED`) while preserving multi-number text ranges (`1.5M - 2M`). |
+| 20 | **Stacked Headers & Title Banners** | Report title rows sit above headers, or 2-row merged category/sub-column headers (`header=[0,1]`) break mapping. | Skip sparse banner rows, forward-fill/flatten 2-tier stacked headers cleanly, and prioritize leaf column hints when inferring canonical slots. |
+| 21 | **Non-Comma CSVs, Multi-Line & `.xls`/`.xlsb`** | European `;` or `\t` CSVs, `Alt+Enter` multiline headers/cells, and legacy binary `.xls`/`.xlsb` break standard parsers. | Sniff delimiter across `16 KB` (`,`, `;`, `\t`, `|`) preserving multi-line quoted cells, and read `.xls`/`.xlsb` via `xlrd`/`pyxlsb` with actionable hints. |
 
 ---
 
