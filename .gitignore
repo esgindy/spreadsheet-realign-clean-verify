@@ -1,0 +1,20 @@
+# Protect private client data & runtime artifacts from ever being pushed to GitHub
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+_clean_work/
+cleaned_output/
+
+# Ignore raw/cleaned customer CSVs and audit dumps outside synthetic examples/
+*.csv
+!examples/*.csv
+*audit*.json
+*extracted*.json
+*decisions*.json
+*metrics*.json
+*raw_source_index*.json
